@@ -23,8 +23,18 @@ class MeetingMinutesBot {
       puppet: 'wechaty-puppet-wechat',
       puppetOptions: {
         uos: config.puppetUosEnabled,
+        timeout: 60000,
         launchOptions: {
-          headless: config.puppetHeadless
+          headless: config.puppetHeadless,
+          args: [
+            '--no-sandbox',                    // 禁用沙箱模式（在某些环境如 Docker 中必需）
+            '--disable-setuid-sandbox',        // 禁用 setuid 沙箱
+            '--disable-dev-shm-usage',         // 不使用 /dev/shm 共享内存（避免内存不足）
+            '--disable-accelerated-2d-canvas', // 禁用 2D canvas 硬件加速
+            '--no-first-run',                  // 跳过首次运行向导
+            '--no-zygote',                     // 禁用 zygote 进程（减少进程开销）
+            '--disable-gpu'                    // 禁用 GPU 硬件加速
+          ]
         }
       }
     })
@@ -39,6 +49,8 @@ class MeetingMinutesBot {
       .on('logout', this.onLogout.bind(this))
       .on('message', this.onMessage.bind(this))
       .on('error', this.onError.bind(this))
+      .on('ready', this.onReady.bind(this))
+      .on('heartbeat', this.onHeartbeat.bind(this))
   }
 
   private onScan(qrcode: string, status: number): void {
@@ -64,6 +76,15 @@ class MeetingMinutesBot {
 
   private onError(error: Error): void {
     console.error('❌ Bot error:', error)
+    console.error('   Error stack:', error.stack)
+  }
+
+  private onReady(): void {
+    console.log('\n✅ Bot is ready!')
+  }
+
+  private onHeartbeat(data: any): void {
+    console.log(`💓 Heartbeat: ${new Date().toLocaleTimeString()}`)
   }
 
   private async onMessage(message: Message): Promise<void> {
@@ -179,9 +200,25 @@ class MeetingMinutesBot {
   async start(): Promise<void> {
     try {
       console.log('🚀 Starting bot...\n')
+      console.log('⏳ Initializing puppet...')
+      console.log('   Puppet: wechaty-puppet-wechat')
+      console.log(`   UOS enabled: ${config.puppetUosEnabled}`)
+      console.log(`   Headless: ${config.puppetHeadless}`)
+      console.log('')
+
       await this.bot.start()
+      console.log('✅ Bot started successfully!')
     } catch (error) {
-      console.error('Failed to start bot:', error)
+      console.error('\n❌ Failed to start bot:', error)
+      if (error instanceof Error) {
+        console.error('   Message:', error.message)
+        console.error('   Stack:', error.stack)
+      }
+      console.error('\n💡 Troubleshooting tips:')
+      console.error('   1. Check if you can login at https://wx.qq.com')
+      console.error('   2. Ensure PUPPET_UOS_ENABLED=true in .env')
+      console.error('   3. Try setting PUPPET_HEADLESS=false to see browser')
+      console.error('   4. Your WeChat account must be verified/real-name authenticated')
       process.exit(1)
     }
   }
