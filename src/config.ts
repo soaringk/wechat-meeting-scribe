@@ -19,9 +19,8 @@ function getEnvBoolean(key: string, defaultValue: boolean): boolean {
 }
 
 export const config: BotConfig = {
-  llmApiUrl: getEnv('LLM_API_URL', ''),
-  llmApiKey: getEnv('LLM_API_KEY', ''),
-  llmModel: getEnv('LLM_MODEL', 'DeepSeek-V3.2-Exp'),
+  llmApiKey: getEnv('GEMINI_API_KEY', ''),
+  llmModel: getEnv('GEMINI_MODEL', 'gemini-2.5-flash'),
   botName: getEnv('BOT_NAME', 'meeting-minutes-bot'),
   targetRooms: getEnv('TARGET_ROOMS')
     .split(',')
@@ -41,9 +40,6 @@ export const config: BotConfig = {
 export function validateConfig(): void {
   if (!config.llmApiKey) {
     throw new Error('LLM_API_KEY is required')
-  }
-  if (!config.llmApiUrl) {
-    throw new Error('LLM_API_URL is required')
   }
   console.log('✓ Configuration loaded successfully')
   console.log(`  - Bot name: ${config.botName}`)

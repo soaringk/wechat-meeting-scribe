@@ -24,7 +24,6 @@ export interface SummaryTriggerConfig {
 }
 
 export interface BotConfig {
-  llmApiUrl: string
   llmApiKey: string
   llmModel: string
   botName: string

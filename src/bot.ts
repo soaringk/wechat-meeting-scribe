@@ -94,40 +94,65 @@ class MeetingMinutesBot {
       }
 
       const room = message.room()
-      if (!room) {
-        return
-      }
-
-      const topic = await room.topic()
-      const talker = message.talker()
       const text = message.text()
 
-      if (!text || text.trim().length === 0) {
-        return
-      }
+      if (room) {
+        // Group chat message
+        const topic = await room.topic()
+        const talker = message.talker()
 
-      if (!this.isTargetRoom(topic)) {
-        return
-      }
+        if (!text || text.trim().length === 0) {
+          return
+        }
 
-      const bufferedMessage: BufferedMessage = {
-        id: message.id,
-        timestamp: message.date(),
-        sender: talker.name(),
-        content: text,
-        roomTopic: topic
-      }
+        if (text.trim() === '@bot /list-rooms') {
+          await this.listRooms(message)
+          return
+        }
 
-      this.buffer.add(bufferedMessage)
+        if (!this.isTargetRoom(topic)) {
+          return
+        }
 
-      const isKeywordTrigger = this.checkKeywordTrigger(text)
+        const bufferedMessage: BufferedMessage = {
+          id: message.id,
+          timestamp: message.date(),
+          sender: talker.name(),
+          content: text,
+          roomTopic: topic
+        }
 
-      if (this.buffer.shouldSummarize(isKeywordTrigger)) {
-        await this.generateAndSendSummary(room)
+        this.buffer.add(bufferedMessage)
+
+        const isKeywordTrigger = this.checkKeywordTrigger(text)
+
+        if (this.buffer.shouldSummarize(isKeywordTrigger)) {
+          await this.generateAndSendSummary(room)
+        }
+      } else {
+        // Direct message
+        if (text.trim() === '/list-rooms') {
+          await this.listRooms(message)
+        }
       }
     } catch (error) {
       console.error('Error processing message:', error)
     }
+  }
+
+  private async listRooms(message: Message): Promise<void> {
+    console.log('\n🔍 Received command to list rooms')
+    const rooms = await this.bot.Room.findAll()
+    let response = '📢 Available Rooms:\n\n'
+    if (rooms.length > 0) {
+      response += rooms
+        .map(room => `- Topic: ${room.topic()}\n  ID: ${room.id}`)
+        .join('\n\n')
+    } else {
+      response += 'No rooms found.'
+    }
+    await message.say(response)
+    console.log('✅ Room list sent successfully')
   }
 
   private isTargetRoom(roomTopic: string): boolean {
@@ -154,8 +179,14 @@ class MeetingMinutesBot {
 
       const summary = await this.generator.generate(this.buffer)
 
-      console.log('📤 Sending summary to room...')
-      await room.say(summary)
+      const currentUser = this.bot.currentUser
+      if (currentUser) {
+        console.log('📤 Forwarding summary to self...')
+        await currentUser.say(summary)
+      } else {
+        console.log('📤 Sending summary to room...')
+        await room.say(summary)
+      }
 
       this.buffer.clear()
 

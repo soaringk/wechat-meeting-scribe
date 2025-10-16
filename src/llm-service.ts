@@ -1,15 +1,13 @@
-import axios, { AxiosError } from 'axios'
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai'
 import { config } from './config.js'
 import { LLMMessage, LLMResponse } from './types.js'
 
 export class LLMService {
-  private apiUrl: string
-  private apiKey: string
+  private ai: GoogleGenAI
   private model: string
 
   constructor() {
-    this.apiUrl = config.llmApiUrl
-    this.apiKey = config.llmApiKey
+    this.ai = new GoogleGenAI({ apiKey: config.llmApiKey })
     this.model = config.llmModel
   }
 
@@ -17,46 +15,25 @@ export class LLMService {
     try {
       console.log(`[LLM] Sending request to ${this.model}...`)
 
-      const response = await axios.post(
-        this.apiUrl,
-        {
-          model: this.model,
-          messages: messages
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 60000
-        }
-      )
+      const contents = messages.map(msg => ({
+        role: msg.role,
+        parts: [{ text: msg.content }]
+      }))
 
-      if (response.data?.choices?.[0]?.message?.content) {
-        const content = response.data.choices[0].message.content
-        console.log(`[LLM] Response received (${content.length} chars)`)
-        return { content }
+      const response = await this.ai.models.generateContent({
+        model: this.model,
+        contents: contents
+      });
+      const content = response.text
+      if (content === undefined) {
+        console.log('[LLM] No content in response')
+        return { content: '' }
       }
 
-      throw new Error('Invalid response format from LLM API')
+      console.log(`[LLM] Response received (${content.length} chars)`)
+      return { content }
     } catch (error) {
       console.error('[LLM] Error:', error)
-
-      if (axios.isAxiosError(error)) {
-        const axiosError = error as AxiosError
-        if (axiosError.response) {
-          return {
-            content: '',
-            error: `API Error: ${axiosError.response.status} - ${JSON.stringify(axiosError.response.data)}`
-          }
-        } else if (axiosError.request) {
-          return {
-            content: '',
-            error: 'Network error: No response from API'
-          }
-        }
-      }
-
       return {
         content: '',
         error: error instanceof Error ? error.message : 'Unknown error'
