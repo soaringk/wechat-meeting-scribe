@@ -94,46 +94,36 @@ class MeetingMinutesBot {
       }
 
       const room = message.room()
+      if (!room) {
+        return
+      }
       const text = message.text()
+      // Group chat message
+      const topic = await room.topic()
+      const talker = message.talker()
 
-      if (room) {
-        // Group chat message
-        const topic = await room.topic()
-        const talker = message.talker()
+      if (!text || text.trim().length === 0) {
+        return
+      }
 
-        if (!text || text.trim().length === 0) {
-          return
-        }
+      if (!this.isTargetRoom(topic)) {
+        return
+      }
 
-        if (text.trim() === '@bot /list-rooms') {
-          await this.listRooms(message)
-          return
-        }
+      const bufferedMessage: BufferedMessage = {
+        id: message.id,
+        timestamp: message.date(),
+        sender: talker.name(),
+        content: text,
+        roomTopic: topic
+      }
 
-        if (!this.isTargetRoom(topic)) {
-          return
-        }
+      this.buffer.add(bufferedMessage)
 
-        const bufferedMessage: BufferedMessage = {
-          id: message.id,
-          timestamp: message.date(),
-          sender: talker.name(),
-          content: text,
-          roomTopic: topic
-        }
+      const isKeywordTrigger = this.checkKeywordTrigger(text)
 
-        this.buffer.add(bufferedMessage)
-
-        const isKeywordTrigger = this.checkKeywordTrigger(text)
-
-        if (this.buffer.shouldSummarize(isKeywordTrigger)) {
-          await this.generateAndSendSummary(room)
-        }
-      } else {
-        // Direct message
-        if (text.trim() === '/list-rooms') {
-          await this.listRooms(message)
-        }
+      if (this.buffer.shouldSummarize(isKeywordTrigger)) {
+        await this.generateAndSendSummary(room)
       }
     } catch (error) {
       console.error('Error processing message:', error)
