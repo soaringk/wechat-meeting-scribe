@@ -143,8 +143,7 @@ Trigger Activated
            │
            ▼
 ┌──────────────────────┐
-│ Alibaba DeepSeek API │  POST /chat/completions
-│ Process Request      │
+│       LLM API        │  POST /chat/completions
 └──────────┬───────────┘
            │
            │  Structured Summary Response
@@ -160,7 +159,7 @@ Trigger Activated
            ▼
 ┌──────────────────────┐
 │ bot.ts               │  room.say(summary)
-│ Send to Room         │
+│ Send to Self         │
 └──────────┬───────────┘
            │
            ▼
@@ -654,5 +653,5 @@ This architecture is designed for simplicity, reliability, and extensibility. It
 
 ---
 
-**Last Updated**: 2025-10-14
+**Last Updated**: 2025-10-17
 **Version**: 1.0.0
