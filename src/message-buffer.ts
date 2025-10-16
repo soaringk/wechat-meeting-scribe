@@ -12,6 +12,7 @@ export class MessageBuffer {
 
   add(message: BufferedMessage): void {
     this.messages.push(message)
+    console.log('[DEBUG] Buffer state:', this.getStats())
 
     if (this.messages.length > config.maxBufferSize) {
       const removeCount = this.messages.length - config.maxBufferSize

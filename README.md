@@ -58,9 +58,8 @@ Edit `.env` with your settings:
 
 ```env
 # LLM API Configuration
-LLM_API_URL=https://whale-wave.alibaba-inc.com/api/v2/services/aigc/text-generation/chat/completions
-LLM_API_KEY=your_api_key_here
-LLM_MODEL=DeepSeek-V3.2-Exp
+GEMINI_API_KEY=your_api_key_here
+GEMINI_MODEL=your_model_name_here
 
 # Target rooms (comma-separated, leave empty for all rooms)
 TARGET_ROOMS=项目讨论群,技术交流群
@@ -267,6 +266,16 @@ npm run clean
 ```bash
 # TODO: Add tests
 npm test
+```
+
+### Memory Usage
+
+```bash
+# Monitor while bot is running
+node --expose-gc dist/bot.js
+
+# Or use external tool
+ps aux | grep node
 ```
 
 ## 🤝 Contributing

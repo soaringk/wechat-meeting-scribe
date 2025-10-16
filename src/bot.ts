@@ -89,6 +89,12 @@ class MeetingMinutesBot {
   }
 
   private async onMessage(message: Message): Promise<void> {
+    console.log('[DEBUG] Message received:', {
+      from: message.talker().name(),
+      room: message.room() ? await message.room()?.topic() : 'N/A',
+      text: message.text(),
+      self: message.self()
+    })
     try {
       if (message.self()) {
         return

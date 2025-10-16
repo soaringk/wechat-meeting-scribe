@@ -12,14 +12,7 @@ export class LLMService {
   }
 
   async chat(conversationText: string): Promise<LLMResponse> {
-    try {
-      console.log(`[LLM] Sending request to ${this.model}...`)
-
-      const response = await this.ai.models.generateContent({
-        model: this.model,
-        contents: `请为以下群聊消息生成会议纪要：\n\n${conversationText}`,
-        config: {
-          systemInstruction: `你是一个专业的会议记录助手。你的任务是根据群聊消息生成简洁、结构化的会议纪要。请按照以下格式输出：
+    const systemPrompt = `你是一个专业的会议记录助手。你的任务是根据群聊消息生成简洁、结构化的会议纪要。请按照以下格式输出：
 
 ## 会议纪要
 
@@ -43,6 +36,17 @@ export class LLMService {
 2. 使用中文
 3. 如果某个部分没有内容，可以省略
 4. 保持客观，不要添加个人观点`
+    try {
+      console.log(`[LLM] Sending request to ${this.model}...`)
+
+      const message = `请为以下群聊消息生成会议纪要：\n\n${conversationText}`
+      console.log('[DEBUG] LLM Request:', message, null, 2)
+
+      const response = await this.ai.models.generateContent({
+        model: this.model,
+        contents: message,
+        config: {
+          systemInstruction: systemPrompt
         }
       });
       const content = response.text
