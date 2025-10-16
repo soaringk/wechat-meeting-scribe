@@ -1,4 +1,5 @@
 import { WechatyBuilder, Message, Contact } from 'wechaty'
+import { types } from 'wechaty-puppet'
 import { config, validateConfig } from './config.js'
 import { MessageBuffer } from './message-buffer.js'
 import { SummaryGenerator } from './summary-generator.js'
@@ -84,7 +85,7 @@ class MeetingMinutesBot {
   }
 
   private onHeartbeat(data: any): void {
-    console.log(`💓 Heartbeat: ${new Date().toLocaleTimeString()}`)
+    console.log(`Heartbeat: ${new Date().toLocaleTimeString()}`)
   }
 
   private async onMessage(message: Message): Promise<void> {
@@ -95,6 +96,10 @@ class MeetingMinutesBot {
 
       const room = message.room()
       if (!room) {
+        return
+      }
+
+      if (message.type() !== types.Message.Text) {
         return
       }
       const text = message.text()
