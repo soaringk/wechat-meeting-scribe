@@ -168,21 +168,20 @@ class MeetingMinutesBot {
     return text.includes(config.summaryTrigger.keyword)
   }
 
+  private getReceiver() {
+    console.log('📤 Forwarding summary to self...')
+    return this.bot.currentUser // default to self
+  }
+
   private async generateAndSendSummary(room: any): Promise<void> {
+    const receiver = this.getReceiver()
     try {
       console.log('\n📝 Generating summary...')
-
       const summary = await this.generator.generate(this.buffer)
 
-      const currentUser = this.bot.currentUser
-      if (currentUser) {
-        console.log('📤 Forwarding summary to self...')
-        await currentUser.say(summary)
-      } else {
-        console.log('📤 Sending summary to room...')
-        await room.say(summary)
+      if (receiver) {
+        await receiver.say(summary)
       }
-
       this.buffer.clear()
 
       console.log('✅ Summary sent successfully!\n')
@@ -190,7 +189,7 @@ class MeetingMinutesBot {
       console.error('❌ Error generating/sending summary:', error)
 
       try {
-        await room.say(`生成会议纪要时出错，请稍后重试。错误：${error instanceof Error ? error.message : '未知错误'}`)
+        await receiver.say(`生成会议纪要时出错，请稍后重试。错误：${error instanceof Error ? error.message : '未知错误'}`)
       } catch (sendError) {
         console.error('Failed to send error message:', sendError)
       }

@@ -11,42 +11,15 @@ export class LLMService {
     this.model = config.llmModel
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
+  async chat(conversationText: string): Promise<LLMResponse> {
     try {
       console.log(`[LLM] Sending request to ${this.model}...`)
 
-      const contents = messages.map(msg => ({
-        role: msg.role,
-        parts: [{ text: msg.content }]
-      }))
-
       const response = await this.ai.models.generateContent({
         model: this.model,
-        contents: contents
-      });
-      const content = response.text
-      if (content === undefined) {
-        console.log('[LLM] No content in response')
-        return { content: '' }
-      }
-
-      console.log(`[LLM] Response received (${content.length} chars)`)
-      return { content }
-    } catch (error) {
-      console.error('[LLM] Error:', error)
-      return {
-        content: '',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    }
-  }
-
-  async generateSummary(messages: string[]): Promise<string> {
-    const conversationText = messages.join('\n')
-
-    const systemPrompt = `你是一个专业的会议记录助手。你的任务是根据群聊消息生成简洁、结构化的会议纪要。
-
-请按照以下格式输出：
+        contents: `请为以下群聊消息生成会议纪要：\n\n${conversationText}`,
+        config: {
+          systemInstruction: `你是一个专业的会议记录助手。你的任务是根据群聊消息生成简洁、结构化的会议纪要。请按照以下格式输出：
 
 ## 会议纪要
 
@@ -70,16 +43,29 @@ export class LLMService {
 2. 使用中文
 3. 如果某个部分没有内容，可以省略
 4. 保持客观，不要添加个人观点`
-
-    const llmMessages: LLMMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `请为以下群聊消息生成会议纪要：\n\n${conversationText}`
+        }
+      });
+      const content = response.text
+      if (content === undefined) {
+        console.log('[LLM] No content in response')
+        return { content: '' }
       }
-    ]
 
-    const response = await this.chat(llmMessages)
+      console.log(`[LLM] Response received (${content.length} chars)`)
+      return { content }
+    } catch (error) {
+      console.error('[LLM] Error:', error)
+      return {
+        content: '',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  }
+
+  async generateSummary(messages: string[]): Promise<string> {
+    const conversationText = messages.join('\n')
+
+    const response = await this.chat(conversationText)
 
     if (response.error) {
       throw new Error(`LLM service error: ${response.error}`)
