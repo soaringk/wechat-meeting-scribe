@@ -1,18 +1,50 @@
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai'
+import OpenAI from 'openai'
 import { config } from './config.js'
 import { LLMMessage, LLMResponse } from './types.js'
 
 export class LLMService {
-  private ai: GoogleGenAI
+  private client: OpenAI
   private model: string
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: config.llmApiKey })
+    this.client = new OpenAI({
+      apiKey: config.llmApiKey,
+      baseURL: config.llmBaseUrl
+    })
     this.model = config.llmModel
   }
 
-  async chat(conversationText: string): Promise<LLMResponse> {
-    const systemPrompt = `你是一个专业的会议记录助手。你的任务是根据群聊消息生成简洁、结构化的会议纪要。请按照以下格式输出：
+  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
+    try {
+      console.log(`[LLM] Sending request to ${this.model}...`)
+      console.debug('[DEBUG] LLM Request:', messages)
+
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: messages
+      })
+
+      const content = response.choices[0]?.message?.content
+      if (!content) {
+        console.log('[LLM] No content in response')
+        return { content: '' }
+      }
+
+      console.log(`[LLM] Response received (${content.length} chars)`)
+      return { content }
+    } catch (error) {
+      console.error('[LLM] Error:', error)
+      return {
+        content: '',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  }
+
+  async generateSummary(messages: string[]): Promise<string> {
+    const systemPrompt = `你是一个专业的会议记录助手。你的任务是根据群聊消息生成简洁、结构化的会议纪要。
+
+请按照以下格式输出：
 
 ## 会议纪要
 
@@ -36,40 +68,18 @@ export class LLMService {
 2. 使用中文
 3. 如果某个部分没有内容，可以省略
 4. 保持客观，不要添加个人观点`
-    try {
-      console.log(`[LLM] Sending request to ${this.model}...`)
 
-      const message = `请为以下群聊消息生成会议纪要：\n\n${conversationText}`
-      console.log('[DEBUG] LLM Request:', message, null, 2)
-
-      const response = await this.ai.models.generateContent({
-        model: this.model,
-        contents: message,
-        config: {
-          systemInstruction: systemPrompt
-        }
-      });
-      const content = response.text
-      if (content === undefined) {
-        console.log('[LLM] No content in response')
-        return { content: '' }
-      }
-
-      console.log(`[LLM] Response received (${content.length} chars)`)
-      return { content }
-    } catch (error) {
-      console.error('[LLM] Error:', error)
-      return {
-        content: '',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    }
-  }
-
-  async generateSummary(messages: string[]): Promise<string> {
     const conversationText = messages.join('\n')
 
-    const response = await this.chat(conversationText)
+    const llmMessages: LLMMessage[] = [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: `请为以下群聊消息生成会议纪要：\n\n${conversationText}`
+      }
+    ]
+
+    const response = await this.chat(llmMessages)
 
     if (response.error) {
       throw new Error(`LLM service error: ${response.error}`)

@@ -20,6 +20,7 @@ function getEnvBoolean(key: string, defaultValue: boolean): boolean {
 
 export const config: BotConfig = {
   llmApiKey: getEnv('LLM_API_KEY', ''),
+  llmBaseUrl: getEnv('LLM_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai/'),
   llmModel: getEnv('LLM_MODEL', 'gemini-2.5-flash'),
   botName: getEnv('BOT_NAME', 'meeting-minutes-bot'),
   targetRooms: getEnv('TARGET_ROOMS')
@@ -43,6 +44,7 @@ export function validateConfig(): void {
   }
   console.log('✓ Configuration loaded successfully')
   console.log(`  - Bot name: ${config.botName}`)
+  console.log(`  - LLM base URL: ${config.llmBaseUrl}`)
   console.log(`  - LLM model: ${config.llmModel}`)
   console.log(`  - Target rooms: ${config.targetRooms.length > 0 ? config.targetRooms.join(', ') : 'All rooms'}`)
   console.log(`  - Summary triggers:`)

@@ -30,7 +30,7 @@ The bot generates meeting minutes with the following structure:
 - Node.js 16+
 - NPM 7+
 - WeChat account (must be able to login to web WeChat)
-- LLM API access (currently configured for Alibaba DeepSeek API)
+- LLM API access (supports Gemini, OpenAI, or any OpenAI-compatible API)
 
 ### Installation
 
@@ -58,8 +58,20 @@ Edit `.env` with your settings:
 
 ```env
 # LLM API Configuration
-LLM_API_KEY=your_api_key_here
-LLM_MODEL=your_model_name_here
+# For Gemini (default)
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_API_KEY=your_gemini_api_key_here
+LLM_MODEL=gemini-2.5-flash
+
+# For OpenAI
+# LLM_BASE_URL=https://api.openai.com/v1
+# LLM_API_KEY=your_openai_api_key_here
+# LLM_MODEL=gpt-4o-mini
+
+# For other OpenAI-compatible providers
+# LLM_BASE_URL=https://your-provider-url.com/v1
+# LLM_API_KEY=your_api_key_here
+# LLM_MODEL=your_model_name
 
 # Target rooms (comma-separated, leave empty for all rooms)
 TARGET_ROOMS=项目讨论群,技术交流群
@@ -149,9 +161,9 @@ wechat-meeting-scribe/
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `LLM_API_URL` | string | (required) | LLM API endpoint |
+| `LLM_BASE_URL` | string | Gemini OpenAI endpoint | LLM API base URL |
 | `LLM_API_KEY` | string | (required) | API authentication key |
-| `LLM_MODEL` | string | DeepSeek-V3.2-Exp | Model name |
+| `LLM_MODEL` | string | gemini-2.5-flash | Model name |
 | `BOT_NAME` | string | meeting-minutes-bot | Bot instance name |
 | `TARGET_ROOMS` | string | (empty) | Comma-separated room names |
 | `SUMMARY_INTERVAL_MINUTES` | number | 30 | Time-based trigger (0=disabled) |
@@ -290,7 +302,8 @@ MIT
 
 - [Wechaty](https://github.com/wechaty/wechaty) - Conversational RPA SDK
 - [wechaty-puppet-wechat](https://github.com/wechaty/wechaty-puppet-wechat) - WeChat Web Protocol
-- DeepSeek - LLM API provider
+- [OpenAI](https://github.com/openai/openai-node) - OpenAI Node.js library
+- Google Gemini - Default LLM provider
 
 ## 📞 Support
 
