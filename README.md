@@ -58,8 +58,8 @@ Edit `.env` with your settings:
 
 ```env
 # LLM API Configuration
-GEMINI_API_KEY=your_api_key_here
-GEMINI_MODEL=your_model_name_here
+LLM_API_KEY=your_api_key_here
+LLM_MODEL=your_model_name_here
 
 # Target rooms (comma-separated, leave empty for all rooms)
 TARGET_ROOMS=项目讨论群,技术交流群

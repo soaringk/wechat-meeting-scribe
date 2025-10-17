@@ -19,8 +19,8 @@ function getEnvBoolean(key: string, defaultValue: boolean): boolean {
 }
 
 export const config: BotConfig = {
-  llmApiKey: getEnv('GEMINI_API_KEY', ''),
-  llmModel: getEnv('GEMINI_MODEL', 'gemini-2.5-flash'),
+  llmApiKey: getEnv('LLM_API_KEY', ''),
+  llmModel: getEnv('LLM_MODEL', 'gemini-2.5-flash'),
   botName: getEnv('BOT_NAME', 'meeting-minutes-bot'),
   targetRooms: getEnv('TARGET_ROOMS')
     .split(',')
