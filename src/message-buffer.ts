@@ -2,8 +2,8 @@ import { BufferedMessage, SummaryTriggerConfig } from './types.js'
 import { config } from './config.js'
 
 export class MessageBuffer {
-  private messages: BufferedMessage[] = []
-  private lastSummaryTime: Date | null = null
+  private messagesByRoom: Map<string, BufferedMessage[]> = new Map()
+  private lastSummaryTime: Map<string, Date> = new Map()
   private triggerConfig: SummaryTriggerConfig
 
   constructor() {
@@ -11,49 +11,65 @@ export class MessageBuffer {
   }
 
   add(message: BufferedMessage): void {
-    this.messages.push(message)
-    console.log('[DEBUG] Buffer state:', this.getStats())
-
-    if (this.messages.length > config.maxBufferSize) {
-      const removeCount = this.messages.length - config.maxBufferSize
-      this.messages.splice(0, removeCount)
-      console.log(`[Buffer] Removed ${removeCount} old messages (max size: ${config.maxBufferSize})`)
+    const { roomTopic } = message
+    if (!this.messagesByRoom.has(roomTopic)) {
+      this.messagesByRoom.set(roomTopic, [])
     }
 
-    console.log(`[Buffer] Message added. Total: ${this.messages.length}`)
+    const roomMessages = this.messagesByRoom.get(roomTopic)!
+    roomMessages.push(message)
+    console.log(`[DEBUG] Buffer state for room '${roomTopic}':`, this.getStats(roomTopic))
+
+
+    if (roomMessages.length > config.maxBufferSize) {
+      const removeCount = roomMessages.length - config.maxBufferSize
+      roomMessages.splice(0, removeCount)
+      console.log(`[Buffer] Removed ${removeCount} old messages from room '${roomTopic}' (max size: ${config.maxBufferSize})`)
+    }
+
+    console.log(`[Buffer] Message added to room '${roomTopic}'. Total: ${roomMessages.length}`)
   }
 
-  getMessages(): BufferedMessage[] {
-    return [...this.messages]
+  getMessages(roomTopic: string): BufferedMessage[] {
+    return [...(this.messagesByRoom.get(roomTopic) || [])]
   }
 
-  clear(): void {
-    const count = this.messages.length
-    this.messages = []
-    this.lastSummaryTime = new Date()
-    console.log(`[Buffer] Cleared ${count} messages`)
+  getRoomTopics(): string[] {
+    return Array.from(this.messagesByRoom.keys())
   }
 
-  shouldSummarize(triggeredByKeyword: boolean = false): boolean {
-    if (this.messages.length < this.triggerConfig.minMessagesForSummary) {
-      console.log(`[Buffer] Not enough messages for summary (${this.messages.length}/${this.triggerConfig.minMessagesForSummary})`)
+  clear(roomTopic: string): void {
+    const roomMessages = this.messagesByRoom.get(roomTopic)
+    if (roomMessages) {
+      const count = roomMessages.length
+      this.messagesByRoom.set(roomTopic, [])
+      this.lastSummaryTime.set(roomTopic, new Date())
+      console.log(`[Buffer] Cleared ${count} messages from room '${roomTopic}'`)
+    }
+  }
+
+  shouldSummarize(roomTopic: string, triggeredByKeyword: boolean = false): boolean {
+    const roomMessages = this.messagesByRoom.get(roomTopic) || []
+    if (roomMessages.length < this.triggerConfig.minMessagesForSummary) {
+      console.log(`[Buffer] Not enough messages in room '${roomTopic}' for summary (${roomMessages.length}/${this.triggerConfig.minMessagesForSummary})`)
       return false
     }
 
     if (triggeredByKeyword) {
-      console.log('[Buffer] Summary triggered by keyword')
+      console.log(`[Buffer] Summary triggered by keyword in room '${roomTopic}'`)
       return true
     }
 
-    if (this.triggerConfig.messageCount > 0 && this.messages.length >= this.triggerConfig.messageCount) {
-      console.log(`[Buffer] Summary triggered by message count (${this.messages.length}/${this.triggerConfig.messageCount})`)
+    if (this.triggerConfig.messageCount > 0 && roomMessages.length >= this.triggerConfig.messageCount) {
+      console.log(`[Buffer] Summary triggered by message count in room '${roomTopic}' (${roomMessages.length}/${this.triggerConfig.messageCount})`)
       return true
     }
 
-    if (this.triggerConfig.intervalMinutes > 0 && this.lastSummaryTime) {
-      const minutesSinceLastSummary = (Date.now() - this.lastSummaryTime.getTime()) / (1000 * 60)
+    const lastSummary = this.lastSummaryTime.get(roomTopic)
+    if (this.triggerConfig.intervalMinutes > 0 && lastSummary) {
+      const minutesSinceLastSummary = (Date.now() - lastSummary.getTime()) / (1000 * 60)
       if (minutesSinceLastSummary >= this.triggerConfig.intervalMinutes) {
-        console.log(`[Buffer] Summary triggered by time interval (${minutesSinceLastSummary.toFixed(1)}/${this.triggerConfig.intervalMinutes} minutes)`)
+        console.log(`[Buffer] Summary triggered by time interval in room '${roomTopic}' (${minutesSinceLastSummary.toFixed(1)}/${this.triggerConfig.intervalMinutes} minutes)`)
         return true
       }
     }
@@ -61,19 +77,21 @@ export class MessageBuffer {
     return false
   }
 
-  formatMessagesForLLM(): string[] {
-    return this.messages.map(msg => {
+  formatMessagesForLLM(roomTopic: string): string[] {
+    const roomMessages = this.messagesByRoom.get(roomTopic) || []
+    return roomMessages.map(msg => {
       const time = msg.timestamp.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
       return `[${time}] ${msg.sender}: ${msg.content}`
     })
   }
 
-  getStats(): { count: number; firstMessage: Date | null; lastMessage: Date | null; participants: Set<string> } {
-    const participants = new Set(this.messages.map(m => m.sender))
+  getStats(roomTopic: string): { count: number; firstMessage: Date | null; lastMessage: Date | null; participants: Set<string> } {
+    const roomMessages = this.messagesByRoom.get(roomTopic) || []
+    const participants = new Set(roomMessages.map(m => m.sender))
     return {
-      count: this.messages.length,
-      firstMessage: this.messages.length > 0 ? this.messages[0].timestamp : null,
-      lastMessage: this.messages.length > 0 ? this.messages[this.messages.length - 1].timestamp : null,
+      count: roomMessages.length,
+      firstMessage: roomMessages.length > 0 ? roomMessages[0].timestamp : null,
+      lastMessage: roomMessages.length > 0 ? roomMessages[roomMessages.length - 1].timestamp : null,
       participants
     }
   }

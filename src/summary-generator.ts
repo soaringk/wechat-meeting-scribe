@@ -8,33 +8,33 @@ export class SummaryGenerator {
     this.llmService = new LLMService()
   }
 
-  async generate(buffer: MessageBuffer): Promise<string> {
-    const stats = buffer.getStats()
+  async generate(buffer: MessageBuffer, roomTopic: string): Promise<string> {
+    const stats = buffer.getStats(roomTopic)
 
     if (stats.count === 0) {
-      return '暂无消息需要总结。'
+      return `群组「${roomTopic}」暂无新消息需要总结。`
     }
 
-    console.log(`[Summary] Generating summary for ${stats.count} messages...`)
+    console.log(`[Summary] Generating summary for ${stats.count} messages in room '${roomTopic}'...`)
     console.log(`[Summary] Participants: ${stats.participants.size}`)
     console.log(`[Summary] Time range: ${stats.firstMessage?.toLocaleString('zh-CN')} - ${stats.lastMessage?.toLocaleString('zh-CN')}`)
 
     try {
-      const formattedMessages = buffer.formatMessagesForLLM()
+      const formattedMessages = buffer.formatMessagesForLLM(roomTopic)
       const summary = await this.llmService.generateSummary(formattedMessages)
 
-      const header = this.generateHeader(stats)
+      const header = this.generateHeader(stats, roomTopic)
       const fullSummary = `${header}\n\n${summary}\n\n---\n📊 统计信息：共 ${stats.count} 条消息，${stats.participants.size} 位参与者`
 
-      console.log(`[Summary] Summary generated successfully (${fullSummary.length} chars)`)
+      console.log(`[Summary] Summary generated successfully for room '${roomTopic}' (${fullSummary.length} chars)`)
       return fullSummary
     } catch (error) {
-      console.error('[Summary] Error generating summary:', error)
-      return `❌ 生成纪要时出错：${error instanceof Error ? error.message : '未知错误'}`
+      console.error(`[Summary] Error generating summary for room '${roomTopic}':`, error)
+      return `❌ 为「${roomTopic}」生成纪要时出错：${error instanceof Error ? error.message : '未知错误'}`
     }
   }
 
-  private generateHeader(stats: { count: number; firstMessage: Date | null; lastMessage: Date | null }): string {
+  private generateHeader(stats: { count: number; firstMessage: Date | null; lastMessage: Date | null }, roomTopic: string): string {
     const now = new Date()
     const dateStr = now.toLocaleDateString('zh-CN', {
       year: 'numeric',
@@ -50,6 +50,6 @@ export class SummaryGenerator {
       timeRange = `${start} - ${end}`
     }
 
-    return `# 🤖 会议纪要\n📅 日期：${dateStr}\n⏰ 时间：${timeRange}\n`
+    return `# 🤖 ${roomTopic} 会议纪要\n📅 日期：${dateStr}\n⏰ 时间：${timeRange}\n`
   }
 }

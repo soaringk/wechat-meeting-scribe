@@ -133,8 +133,8 @@ class MeetingMinutesBot {
 
       const isKeywordTrigger = this.checkKeywordTrigger(text)
 
-      if (this.buffer.shouldSummarize(isKeywordTrigger)) {
-        await this.generateAndSendSummary(room)
+      if (this.buffer.shouldSummarize(topic, isKeywordTrigger)) {
+        await this.generateAndSendSummary(room, topic)
       }
     } catch (error) {
       console.error('Error processing message:', error)
@@ -179,23 +179,23 @@ class MeetingMinutesBot {
     return this.bot.currentUser // default to self
   }
 
-  private async generateAndSendSummary(room: any): Promise<void> {
+  private async generateAndSendSummary(room: any, roomTopic: string): Promise<void> {
     const receiver = this.getReceiver()
     try {
-      console.log('\n📝 Generating summary...')
-      const summary = await this.generator.generate(this.buffer)
+      console.log(`\n📝 Generating summary for room '${roomTopic}'...`)
+      const summary = await this.generator.generate(this.buffer, roomTopic)
 
       if (receiver) {
         await receiver.say(summary)
       }
-      this.buffer.clear()
+      this.buffer.clear(roomTopic)
 
-      console.log('✅ Summary sent successfully!\n')
+      console.log(`✅ Summary sent successfully for room '${roomTopic}'\n`)
     } catch (error) {
-      console.error('❌ Error generating/sending summary:', error)
+      console.error(`❌ Error generating/sending summary for room '${roomTopic}':`, error)
 
       try {
-        await receiver.say(`生成会议纪要时出错，请稍后重试。错误：${error instanceof Error ? error.message : '未知错误'}`)
+        await receiver.say(`为「${roomTopic}」生成会议纪要时出错，请稍后重试。错误：${error instanceof Error ? error.message : '未知错误'}`)
       } catch (sendError) {
         console.error('Failed to send error message:', sendError)
       }
@@ -207,14 +207,19 @@ class MeetingMinutesBot {
 
     console.log(`⏱️  Starting interval timer (${config.summaryTrigger.intervalMinutes} minutes)`)
 
-    this.intervalTimer = setInterval(() => {
+    this.intervalTimer = setInterval(async () => {
       console.log('\n⏰ Interval timer triggered')
+      const roomTopics = this.buffer.getRoomTopics()
 
-      if (this.buffer.shouldSummarize(false)) {
-        const messages = this.buffer.getMessages()
-        if (messages.length > 0) {
-          const roomTopic = messages[0].roomTopic
-          console.log(`Processing scheduled summary for room: ${roomTopic}`)
+      for (const topic of roomTopics) {
+        if (this.buffer.shouldSummarize(topic, false)) {
+          console.log(`Processing scheduled summary for room: ${topic}`)
+          const room = await this.bot.Room.find({ topic })
+          if (room) {
+            await this.generateAndSendSummary(room, topic)
+          } else {
+            console.error(`Could not find room with topic: ${topic}`)
+          }
         }
       }
     }, intervalMs)
