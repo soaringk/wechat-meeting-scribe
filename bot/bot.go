@@ -27,7 +27,7 @@ func New() *Bot {
 		buffer:       buffer.New(),
 		generator:    summary.New(),
 		stopTimer:    make(chan bool),
-		summaryQueue: make(chan string, 10),
+		summaryQueue: make(chan string, config.AppConfig.SummaryQueueSize),
 	}
 }
 
@@ -78,7 +78,7 @@ func (b *Bot) Stop() {
 }
 
 func (b *Bot) handleMessage(msg *openwechat.Message) {
-	if !msg.IsText() {
+	if msg.IsSendBySelf() || !msg.IsText() {
 		return
 	}
 

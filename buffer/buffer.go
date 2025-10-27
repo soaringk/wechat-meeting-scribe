@@ -21,6 +21,9 @@ type BufferedMessage struct {
 type roomData struct {
 	mu              sync.Mutex
 	messages        []BufferedMessage
+	writeIndex      int
+	count           int
+	capacity        int
 	lastSummaryTime time.Time
 }
 
@@ -37,7 +40,11 @@ func New() *MessageBuffer {
 func (b *MessageBuffer) getOrCreateRoom(roomTopic string) *roomData {
 	room, ok := b.rooms.Get(roomTopic)
 	if !ok {
-		room = &roomData{}
+		cap := config.AppConfig.MaxBufferSize
+		room = &roomData{
+			messages: make([]BufferedMessage, cap),
+			capacity: cap,
+		}
 		b.rooms.Set(roomTopic, room)
 	}
 	return room
@@ -48,16 +55,14 @@ func (b *MessageBuffer) Add(msg BufferedMessage) {
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
-	room.messages = append(room.messages, msg)
+	room.messages[room.writeIndex] = msg
+	room.writeIndex = (room.writeIndex + 1) % room.capacity
 
-	if len(room.messages) > config.AppConfig.MaxBufferSize {
-		removeCount := len(room.messages) - config.AppConfig.MaxBufferSize
-		room.messages = room.messages[removeCount:]
-		log.Printf("[Buffer] Removed %d old messages from room '%s' (max size: %d)",
-			removeCount, msg.RoomTopic, config.AppConfig.MaxBufferSize)
+	if room.count < room.capacity {
+		room.count++
 	}
 
-	log.Printf("[Buffer] Message added to room '%s'. Total: %d", msg.RoomTopic, len(room.messages))
+	log.Printf("[Buffer] Message added to room '%s'. Total: %d", msg.RoomTopic, room.count)
 }
 
 func (b *MessageBuffer) GetRoomTopics() []string {
@@ -78,8 +83,9 @@ func (b *MessageBuffer) Clear(roomTopic string) {
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
-	count := len(room.messages)
-	room.messages = nil
+	count := room.count
+	room.writeIndex = 0
+	room.count = 0
 	room.lastSummaryTime = time.Now()
 	log.Printf("[Buffer] Cleared %d messages from room '%s'", count, roomTopic)
 }
@@ -93,9 +99,9 @@ func (b *MessageBuffer) ShouldSummarize(roomTopic string, triggeredByKeyword boo
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
-	if len(room.messages) < config.AppConfig.SummaryTrigger.MinMessagesForSummary {
+	if room.count < config.AppConfig.SummaryTrigger.MinMessagesForSummary {
 		log.Printf("[Buffer] Not enough messages in room '%s' for summary (%d/%d)",
-			roomTopic, len(room.messages), config.AppConfig.SummaryTrigger.MinMessagesForSummary)
+			roomTopic, room.count, config.AppConfig.SummaryTrigger.MinMessagesForSummary)
 		return false
 	}
 
@@ -105,9 +111,9 @@ func (b *MessageBuffer) ShouldSummarize(roomTopic string, triggeredByKeyword boo
 	}
 
 	if config.AppConfig.SummaryTrigger.MessageCount > 0 &&
-		len(room.messages) >= config.AppConfig.SummaryTrigger.MessageCount {
+		room.count >= config.AppConfig.SummaryTrigger.MessageCount {
 		log.Printf("[Buffer] Summary triggered by message count in room '%s' (%d/%d)",
-			roomTopic, len(room.messages), config.AppConfig.SummaryTrigger.MessageCount)
+			roomTopic, room.count, config.AppConfig.SummaryTrigger.MessageCount)
 		return true
 	}
 
@@ -125,57 +131,53 @@ func (b *MessageBuffer) ShouldSummarize(roomTopic string, triggeredByKeyword boo
 	return false
 }
 
-func (b *MessageBuffer) FormatMessagesForLLM(roomTopic string) []string {
-	room, ok := b.rooms.Get(roomTopic)
-	if !ok {
-		return []string{}
-	}
-
-	room.mu.Lock()
-	defer room.mu.Unlock()
-
-	formatted := make([]string, len(room.messages))
-	for i, msg := range room.messages {
-		timeStr := msg.Timestamp.Format("15:04")
-		formatted[i] = fmt.Sprintf("[%s] %s: %s", timeStr, msg.Sender, msg.Content)
-	}
-	return formatted
+type Snapshot struct {
+	Count             int
+	FirstMessageTime  *time.Time
+	LastMessageTime   *time.Time
+	Participants      map[string]bool
+	FormattedMessages []string
 }
 
-type Stats struct {
-	Count        int
-	FirstMessage *time.Time
-	LastMessage  *time.Time
-	Participants map[string]bool
-}
-
-func (b *MessageBuffer) GetStats(roomTopic string) Stats {
+func (b *MessageBuffer) GetSnapshot(roomTopic string) Snapshot {
 	room, ok := b.rooms.Get(roomTopic)
 	if !ok {
-		return Stats{
-			Count:        0,
-			Participants: make(map[string]bool),
+		return Snapshot{
+			Count:             0,
+			Participants:      make(map[string]bool),
+			FormattedMessages: nil,
 		}
 	}
 
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
-	stats := Stats{
-		Count:        len(room.messages),
+	snapshot := Snapshot{
+		Count:        room.count,
 		Participants: make(map[string]bool),
 	}
 
-	if len(room.messages) > 0 {
-		first := room.messages[0].Timestamp
-		last := room.messages[len(room.messages)-1].Timestamp
-		stats.FirstMessage = &first
-		stats.LastMessage = &last
+	if room.count > 0 {
+		startIndex := 0
+		if room.count == room.capacity {
+			startIndex = room.writeIndex
+		}
 
-		for _, msg := range room.messages {
-			stats.Participants[msg.Sender] = true
+		firstMsg := room.messages[startIndex]
+		lastMsg := room.messages[(startIndex+room.count-1)%room.capacity]
+
+		snapshot.FirstMessageTime = &firstMsg.Timestamp
+		snapshot.LastMessageTime = &lastMsg.Timestamp
+
+		snapshot.FormattedMessages = make([]string, room.count)
+		for i := 0; i < room.count; i++ {
+			msgIndex := (startIndex + i) % room.capacity
+			msg := room.messages[msgIndex]
+			snapshot.Participants[msg.Sender] = true
+			timeStr := msg.Timestamp.Format("15:04")
+			snapshot.FormattedMessages[i] = fmt.Sprintf("[%s] %s: %s", timeStr, msg.Sender, msg.Content)
 		}
 	}
 
-	return stats
+	return snapshot
 }

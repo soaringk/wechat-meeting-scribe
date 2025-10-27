@@ -16,10 +16,6 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	if err := config.Validate(); err != nil {
-		log.Fatalf("Configuration validation failed: %v", err)
-	}
-
 	b := bot.New()
 
 	sigChan := make(chan os.Signal, 1)
