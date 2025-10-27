@@ -149,7 +149,7 @@ type Snapshot struct {
 	Count        int
 	FirstMsgTime *time.Time
 	LastMsgTime  *time.Time
-	Participants map[string]bool
+	Participants map[string]struct{}
 	FormattedMsg []string
 }
 
@@ -158,7 +158,7 @@ func (b *MessageBuffer) GetSnapshot(roomTopic string) Snapshot {
 	if !ok {
 		return Snapshot{
 			Count:        0,
-			Participants: make(map[string]bool),
+			Participants: make(map[string]struct{}),
 			FormattedMsg: nil,
 		}
 	}
@@ -168,7 +168,7 @@ func (b *MessageBuffer) GetSnapshot(roomTopic string) Snapshot {
 
 	snapshot := Snapshot{
 		Count:        room.count,
-		Participants: make(map[string]bool),
+		Participants: make(map[string]struct{}),
 	}
 
 	if room.count > 0 {
@@ -187,7 +187,7 @@ func (b *MessageBuffer) GetSnapshot(roomTopic string) Snapshot {
 		for i := 0; i < room.count; i++ {
 			msgIndex := (startIndex + i) % room.capacity
 			msg := room.messages[msgIndex]
-			snapshot.Participants[msg.Sender] = true
+			snapshot.Participants[msg.Sender] = struct{}{}
 			timeStr := msg.Timestamp.Format("15:04")
 			snapshot.FormattedMsg[i] = fmt.Sprintf("[%s] %s: %s", timeStr, msg.Sender, msg.Content)
 		}

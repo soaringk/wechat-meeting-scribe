@@ -29,11 +29,7 @@ func (g *Generator) Generate(ctx context.Context, buf *buffer.MessageBuffer, roo
 
 	log.Printf("[Summary] Generating summary for %d messages in room '%s'...", snapshot.Count, roomTopic)
 	log.Printf("[Summary] Participants: %d", len(snapshot.Participants))
-	if snapshot.FirstMsgTime != nil && snapshot.LastMsgTime != nil {
-		log.Printf("[Summary] Time range: %s - %s",
-			snapshot.FirstMsgTime.Format("2006-01-02 15:04:05"),
-			snapshot.LastMsgTime.Format("2006-01-02 15:04:05"))
-	}
+	log.Printf("[Summary] Time range: %s - %s", snapshot.FirstMsgTime.Format("15:04:05"), snapshot.LastMsgTime.Format("15:04:05"))
 
 	if len(snapshot.FormattedMsg) == 0 {
 		return fmt.Sprintf("群组「%s」暂无新消息需要总结。", roomTopic), nil
