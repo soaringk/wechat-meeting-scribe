@@ -1,6 +1,7 @@
 package summary
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -19,7 +20,7 @@ func New() *Generator {
 	}
 }
 
-func (g *Generator) Generate(buf *buffer.MessageBuffer, roomTopic string) (string, error) {
+func (g *Generator) Generate(ctx context.Context, buf *buffer.MessageBuffer, roomTopic string) (string, error) {
 	snapshot := buf.GetSnapshot(roomTopic)
 
 	if snapshot.Count == 0 {
@@ -28,19 +29,19 @@ func (g *Generator) Generate(buf *buffer.MessageBuffer, roomTopic string) (strin
 
 	log.Printf("[Summary] Generating summary for %d messages in room '%s'...", snapshot.Count, roomTopic)
 	log.Printf("[Summary] Participants: %d", len(snapshot.Participants))
-	if snapshot.FirstMessageTime != nil && snapshot.LastMessageTime != nil {
+	if snapshot.FirstMsgTime != nil && snapshot.LastMsgTime != nil {
 		log.Printf("[Summary] Time range: %s - %s",
-			snapshot.FirstMessageTime.Format("2006-01-02 15:04:05"),
-			snapshot.LastMessageTime.Format("2006-01-02 15:04:05"))
+			snapshot.FirstMsgTime.Format("2006-01-02 15:04:05"),
+			snapshot.LastMsgTime.Format("2006-01-02 15:04:05"))
 	}
 
-	if len(snapshot.FormattedMessages) == 0 {
+	if len(snapshot.FormattedMsg) == 0 {
 		return fmt.Sprintf("群组「%s」暂无新消息需要总结。", roomTopic), nil
 	}
-	summary, err := g.llmService.GenerateSummary(snapshot.FormattedMessages)
+	summary, err := g.llmService.GenerateSummary(ctx, snapshot.FormattedMsg)
 	if err != nil {
 		log.Printf("[Summary] Error generating summary for room '%s': %v", roomTopic, err)
-		return "", fmt.Errorf("生成纪要时出错：%w", err)
+		return "", fmt.Errorf("failed to generate summary: %w", err)
 	}
 
 	header := g.generateHeader(snapshot, roomTopic)
@@ -51,14 +52,18 @@ func (g *Generator) Generate(buf *buffer.MessageBuffer, roomTopic string) (strin
 	return fullSummary, nil
 }
 
+func (g *Generator) Close() {
+	g.llmService.Close()
+}
+
 func (g *Generator) generateHeader(snapshot buffer.Snapshot, roomTopic string) string {
 	now := time.Now()
 	dateStr := now.Format("2006年1月2日 Monday")
 
-	timeRange := ""
-	if snapshot.FirstMessageTime != nil && snapshot.LastMessageTime != nil {
-		start := snapshot.FirstMessageTime.Format("15:04")
-		end := snapshot.LastMessageTime.Format("15:04")
+	timeRange := "N/A"
+	if snapshot.FirstMsgTime != nil && snapshot.LastMsgTime != nil {
+		start := snapshot.FirstMsgTime.Format("15:04")
+		end := snapshot.LastMsgTime.Format("15:04")
 		timeRange = fmt.Sprintf("%s - %s", start, end)
 	}
 

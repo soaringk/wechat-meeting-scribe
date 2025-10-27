@@ -25,6 +25,7 @@ type roomData struct {
 	count           int
 	capacity        int
 	lastSummaryTime time.Time
+	messageIDs      map[string]struct{}
 }
 
 type MessageBuffer struct {
@@ -42,8 +43,9 @@ func (b *MessageBuffer) getOrCreateRoom(roomTopic string) *roomData {
 	if !ok {
 		cap := config.AppConfig.MaxBufferSize
 		room = &roomData{
-			messages: make([]BufferedMessage, cap),
-			capacity: cap,
+			messages:   make([]BufferedMessage, cap),
+			capacity:   cap,
+			messageIDs: make(map[string]struct{}),
 		}
 		b.rooms.Set(roomTopic, room)
 	}
@@ -55,14 +57,26 @@ func (b *MessageBuffer) Add(msg BufferedMessage) {
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
+	if _, ok := room.messageIDs[msg.ID]; ok {
+		log.Printf("[Buffer] Duplicate message ID '%s' detected in room '%s', skipping", msg.ID, msg.RoomTopic)
+		return
+	}
+
+	firstMsg := room.writeIndex
+	if room.count == room.capacity {
+		firstMsgID := room.messages[firstMsg].ID
+		delete(room.messageIDs, firstMsgID)
+	}
+
 	room.messages[room.writeIndex] = msg
+	room.messageIDs[msg.ID] = struct{}{}
 	room.writeIndex = (room.writeIndex + 1) % room.capacity
 
 	if room.count < room.capacity {
 		room.count++
 	}
 
-	log.Printf("[Buffer] Message added to room '%s'. Total: %d", msg.RoomTopic, room.count)
+	log.Printf("[Buffer] Message added to room '%s'. Total: %d (ring buffer)", msg.RoomTopic, room.count)
 }
 
 func (b *MessageBuffer) GetRoomTopics() []string {
@@ -83,11 +97,11 @@ func (b *MessageBuffer) Clear(roomTopic string) {
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
-	count := room.count
+	log.Printf("[Buffer] Clear %d messages from room '%s'", room.count, roomTopic)
 	room.writeIndex = 0
 	room.count = 0
+	room.messageIDs = make(map[string]struct{})
 	room.lastSummaryTime = time.Now()
-	log.Printf("[Buffer] Cleared %d messages from room '%s'", count, roomTopic)
 }
 
 func (b *MessageBuffer) ShouldSummarize(roomTopic string, triggeredByKeyword bool) bool {
@@ -132,20 +146,20 @@ func (b *MessageBuffer) ShouldSummarize(roomTopic string, triggeredByKeyword boo
 }
 
 type Snapshot struct {
-	Count             int
-	FirstMessageTime  *time.Time
-	LastMessageTime   *time.Time
-	Participants      map[string]bool
-	FormattedMessages []string
+	Count        int
+	FirstMsgTime *time.Time
+	LastMsgTime  *time.Time
+	Participants map[string]bool
+	FormattedMsg []string
 }
 
 func (b *MessageBuffer) GetSnapshot(roomTopic string) Snapshot {
 	room, ok := b.rooms.Get(roomTopic)
 	if !ok {
 		return Snapshot{
-			Count:             0,
-			Participants:      make(map[string]bool),
-			FormattedMessages: nil,
+			Count:        0,
+			Participants: make(map[string]bool),
+			FormattedMsg: nil,
 		}
 	}
 
@@ -166,16 +180,16 @@ func (b *MessageBuffer) GetSnapshot(roomTopic string) Snapshot {
 		firstMsg := room.messages[startIndex]
 		lastMsg := room.messages[(startIndex+room.count-1)%room.capacity]
 
-		snapshot.FirstMessageTime = &firstMsg.Timestamp
-		snapshot.LastMessageTime = &lastMsg.Timestamp
+		snapshot.FirstMsgTime = &firstMsg.Timestamp
+		snapshot.LastMsgTime = &lastMsg.Timestamp
 
-		snapshot.FormattedMessages = make([]string, room.count)
+		snapshot.FormattedMsg = make([]string, room.count)
 		for i := 0; i < room.count; i++ {
 			msgIndex := (startIndex + i) % room.capacity
 			msg := room.messages[msgIndex]
 			snapshot.Participants[msg.Sender] = true
 			timeStr := msg.Timestamp.Format("15:04")
-			snapshot.FormattedMessages[i] = fmt.Sprintf("[%s] %s: %s", timeStr, msg.Sender, msg.Content)
+			snapshot.FormattedMsg[i] = fmt.Sprintf("[%s] %s: %s", timeStr, msg.Sender, msg.Content)
 		}
 	}
 

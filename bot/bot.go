@@ -1,9 +1,11 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eatmoreapple/openwechat"
@@ -17,17 +19,24 @@ type Bot struct {
 	buffer       *buffer.MessageBuffer
 	generator    *summary.Generator
 	self         *openwechat.Self
-	stopTimer    chan bool
+	stopTimer    chan struct{}
 	summaryQueue chan string
+	stopOnce     sync.Once
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 func New() *Bot {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &Bot{
 		bot:          openwechat.DefaultBot(openwechat.Desktop),
 		buffer:       buffer.New(),
 		generator:    summary.New(),
-		stopTimer:    make(chan bool),
+		stopTimer:    make(chan struct{}),
 		summaryQueue: make(chan string, config.AppConfig.SummaryQueueSize),
+		ctx:          ctx,
+		cancel:       cancel,
 	}
 }
 
@@ -58,7 +67,7 @@ func (b *Bot) Start() error {
 	b.self = self
 
 	log.Printf("\n✅ User %s logged in successfully!", self.NickName)
-	log.Println("   Bot is now active and monitoring messages.")
+	log.Println("   [Bot] Bot is now active and monitoring messages.")
 
 	go b.summaryWorker()
 
@@ -71,10 +80,14 @@ func (b *Bot) Start() error {
 }
 
 func (b *Bot) Stop() {
-	log.Println("\n🛑 Stopping bot...")
-	b.stopIntervalTimer()
-	close(b.summaryQueue)
-	log.Println("🛑 Bot stopped")
+	b.stopOnce.Do(func() {
+		log.Println("\n[Bot] Stopping bot...")
+		b.cancel()
+		b.stopIntervalTimer()
+		close(b.summaryQueue)
+		b.generator.Close()
+		log.Println("[Bot] Bot stopped gracefully")
+	})
 }
 
 func (b *Bot) handleMessage(msg *openwechat.Message) {
@@ -124,7 +137,7 @@ func (b *Bot) handleMessage(msg *openwechat.Message) {
 		select {
 		case b.summaryQueue <- groupName:
 		default:
-			log.Println("[WARN] summaryQueue is full")
+			log.Printf("[Bot] WARN: Summary queue is full, dropping request for room '%s'", groupName)
 		}
 	}
 }
@@ -154,19 +167,24 @@ func (b *Bot) summaryWorker() {
 	for roomTopic := range b.summaryQueue {
 		b.generateAndSendSummary(roomTopic)
 	}
+	log.Println("[Bot] Summary worker stopped")
 }
 
 func (b *Bot) generateAndSendSummary(roomTopic string) {
-	log.Printf("\n📝 Generating summary for room '%s'...", roomTopic)
+	log.Printf("\n📝 [Bot] Generating summary for room '%s'...", roomTopic)
 
-	summaryText, err := b.generator.Generate(b.buffer, roomTopic)
+	summaryText, err := b.generator.Generate(b.ctx, b.buffer, roomTopic)
 	if err != nil {
-		log.Printf("❌ Error generating summary for room '%s': %v", roomTopic, err)
+		if err == context.Canceled {
+			log.Printf("[Bot] Summary generation cancelled for room '%s'", roomTopic)
+			return
+		}
+		log.Printf("❌ [Bot] Error generating summary for room '%s': %v", roomTopic, err)
 		summaryText = fmt.Sprintf("❌ 为「%s」生成会议纪要时出错：%v", roomTopic, err)
 	}
 
-	if err := b.sendToSelf(summaryText); err != nil {
-		log.Printf("❌ Error sending summary: %v", err)
+	if sendErr := b.sendToSelf(summaryText); sendErr != nil {
+		log.Printf("❌ [Bot] Error sending summary: %v", sendErr)
 		return
 	}
 
@@ -174,7 +192,7 @@ func (b *Bot) generateAndSendSummary(roomTopic string) {
 		b.buffer.Clear(roomTopic)
 	}
 
-	log.Printf("✅ Summary sent successfully for room '%s'\n", roomTopic)
+	log.Printf("✅ [Bot] Summary sent successfully for room '%s'\n", roomTopic)
 }
 
 func (b *Bot) sendToSelf(message string) error {
@@ -189,28 +207,29 @@ func (b *Bot) sendToSelf(message string) error {
 
 func (b *Bot) startIntervalTimer() {
 	intervalMinutes := config.AppConfig.SummaryTrigger.IntervalMinutes
-	log.Printf("⏱️  Starting interval timer (%d minutes)", intervalMinutes)
+	log.Printf("⏱️  [Bot] Starting interval timer (%d minutes)", intervalMinutes)
 
 	ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
 
 	go func() {
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				log.Println("\n⏰ Interval timer triggered")
+				log.Println("\n [Bot] Interval timer triggered")
 				roomTopics := b.buffer.GetRoomTopics()
 				for _, topic := range roomTopics {
 					if b.buffer.ShouldSummarize(topic, false) {
-						log.Printf("Processing scheduled summary for room: %s", topic)
+						log.Printf("[Bot] Processing scheduled summary for room: %s", topic)
 						select {
 						case b.summaryQueue <- topic:
 						default:
+							log.Printf("[Bot] WARN: Summary queue is full, skipping scheduled summary for room '%s'", topic)
 						}
 					}
 				}
 			case <-b.stopTimer:
-				ticker.Stop()
-				log.Println("⏱️  Interval timer stopped")
+				log.Println(" [Bot] Interval timer stopped")
 				return
 			}
 		}
@@ -219,7 +238,7 @@ func (b *Bot) startIntervalTimer() {
 
 func (b *Bot) stopIntervalTimer() {
 	select {
-	case b.stopTimer <- true:
+	case b.stopTimer <- struct{}{}:
 	default:
 	}
 }

@@ -77,6 +77,9 @@ func (c *Config) validate() error {
 	if c.SystemPromptFile == "" {
 		return fmt.Errorf("SYSTEM_PROMPT_FILE is required")
 	}
+	if c.SummaryQueueSize <= 0 {
+		log.Printf("[Bot] Invalid SummaryQueueSize: %d", c.SummaryQueueSize)
+	}
 
 	log.Println("✓ Configuration loaded successfully")
 	log.Printf("  - Bot name: %s", c.BotName)

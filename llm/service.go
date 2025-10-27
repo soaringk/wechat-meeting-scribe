@@ -19,6 +19,8 @@ type Service struct {
 	client       openai.Client
 	model        shared.ChatModel
 	systemPrompt atomic.Value
+	watcher      *fsnotify.Watcher
+	stopWatcher  chan struct{}
 }
 
 func (s *Service) loadSystemPrompt() error {
@@ -44,7 +46,8 @@ func New() *Service {
 			option.WithAPIKey(config.AppConfig.LLMAPIKey),
 			option.WithBaseURL(config.AppConfig.LLMBaseURL),
 		),
-		model: shared.ChatModel(config.AppConfig.LLMModel),
+		model:       shared.ChatModel(config.AppConfig.LLMModel),
+		stopWatcher: make(chan struct{}),
 	}
 
 	if err := s.loadSystemPrompt(); err != nil {
@@ -55,16 +58,20 @@ func New() *Service {
 	if err != nil {
 		log.Fatalf("[LLM] Failed to create file watcher: %v", err)
 	}
+	s.watcher = watcher
 
 	if err := watcher.Add(config.AppConfig.SystemPromptFile); err != nil {
+		watcher.Close()
 		log.Fatalf("[LLM] Failed to watch system prompt file: %v", err)
 	}
 
 	go func() {
+		defer watcher.Close()
 		for {
 			select {
 			case event, ok := <-watcher.Events:
 				if !ok {
+					log.Println("[LLM] File watcher events channel closed")
 					return
 				}
 				if event.Has(fsnotify.Write) {
@@ -75,9 +82,13 @@ func New() *Service {
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
+					log.Println("[LLM] File watcher errors channel closed")
 					return
 				}
 				log.Printf("[LLM] File watcher error: %v", err)
+			case <-s.stopWatcher:
+				log.Println("[LLM] File watcher stopped")
+				return
 			}
 		}
 	}()
@@ -86,7 +97,14 @@ func New() *Service {
 	return s
 }
 
-func (s *Service) GenerateSummary(messages []string) (string, error) {
+func (s *Service) Close() {
+	close(s.stopWatcher)
+	if s.watcher != nil {
+		s.watcher.Close()
+	}
+}
+
+func (s *Service) GenerateSummary(ctx context.Context, messages []string) (string, error) {
 	systemPrompt := s.getSystemPrompt()
 
 	conversationText := strings.Join(messages, "\n")
@@ -95,7 +113,7 @@ func (s *Service) GenerateSummary(messages []string) (string, error) {
 	log.Printf("[LLM] Sending request to %s...", s.model)
 
 	resp, err := s.client.Chat.Completions.New(
-		context.Background(),
+		ctx,
 		openai.ChatCompletionNewParams{
 			Model: s.model,
 			Messages: []openai.ChatCompletionMessageParamUnion{

@@ -31,4 +31,5 @@ func main() {
 	if err := b.Start(); err != nil {
 		log.Fatalf("Fatal error: %v", err)
 	}
+	b.Stop()
 }
