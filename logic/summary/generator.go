@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/soaringk/wechat-meeting-scribe/buffer"
-	"github.com/soaringk/wechat-meeting-scribe/llm"
+	"github.com/soaringk/wechat-meeting-scribe/entity/buffer"
+	"github.com/soaringk/wechat-meeting-scribe/entity/llm"
 )
 
 type Generator struct {

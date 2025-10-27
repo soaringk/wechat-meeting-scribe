@@ -12,7 +12,7 @@ import (
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared"
-	"github.com/soaringk/wechat-meeting-scribe/config"
+	"github.com/soaringk/wechat-meeting-scribe/entity/config"
 )
 
 type Service struct {

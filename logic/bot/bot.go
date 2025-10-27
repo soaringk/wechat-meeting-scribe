@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/eatmoreapple/openwechat"
-	"github.com/soaringk/wechat-meeting-scribe/buffer"
-	"github.com/soaringk/wechat-meeting-scribe/config"
-	"github.com/soaringk/wechat-meeting-scribe/summary"
+	"github.com/soaringk/wechat-meeting-scribe/entity/buffer"
+	"github.com/soaringk/wechat-meeting-scribe/entity/config"
+	"github.com/soaringk/wechat-meeting-scribe/logic/summary"
 )
 
 type Bot struct {

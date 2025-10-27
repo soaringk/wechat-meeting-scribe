@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/alphadose/haxmap"
-	"github.com/soaringk/wechat-meeting-scribe/config"
+	"github.com/soaringk/wechat-meeting-scribe/entity/config"
 )
 
 type BufferedMessage struct {

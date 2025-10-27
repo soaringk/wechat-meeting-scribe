@@ -6,8 +6,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/soaringk/wechat-meeting-scribe/bot"
-	"github.com/soaringk/wechat-meeting-scribe/config"
+	"github.com/soaringk/wechat-meeting-scribe/entity/config"
+	"github.com/soaringk/wechat-meeting-scribe/logic/bot"
 )
 
 func main() {
