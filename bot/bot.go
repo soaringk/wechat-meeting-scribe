@@ -188,10 +188,7 @@ func (b *Bot) generateAndSendSummary(roomTopic string) {
 		return
 	}
 
-	if err == nil {
-		b.buffer.Clear(roomTopic)
-	}
-
+	b.buffer.Clear(roomTopic)
 	log.Printf("✅ [Bot] Summary sent successfully for room '%s'\n", roomTopic)
 }
 
