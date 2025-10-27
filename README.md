@@ -10,7 +10,9 @@ A real-time WeChat bot that automatically tracks and summarizes group discussion
 - **Smart Summarization**: Uses LLM to generate structured meeting minutes
 - **Multiple Triggers**: Supports time-based, volume-based, and keyword triggers
 - **Flexible Configuration**: Easy to customize via environment variables
-- **UOS Support**: Works with modern WeChat accounts (bypasses 2017+ login restrictions)
+- **Desktop Mode Support**: Uses openwechat library to bypass WeChat login restrictions
+- **Hot Login**: Supports persistent login without repeated QR code scanning
+- **Per-Room Buffering**: Independently tracks and summarizes each group chat
 
 ## 📋 Summary Format
 
@@ -27,9 +29,8 @@ The bot generates meeting minutes with the following structure:
 
 ### Prerequisites
 
-- Node.js 16+
-- NPM 7+
-- WeChat account (must be able to login to web WeChat)
+- Go 1.20+
+- WeChat account
 - LLM API access (supports Gemini, OpenAI, or any OpenAI-compatible API)
 
 ### Installation
@@ -43,7 +44,7 @@ cd wechat-meeting-scribe
 2. **Install dependencies**
 
 ```bash
-npm install
+go mod download
 ```
 
 3. **Configure environment variables**
@@ -83,33 +84,35 @@ SUMMARY_KEYWORD=@bot 总结      # Trigger with keyword
 
 # Minimum messages required for summary
 MIN_MESSAGES_FOR_SUMMARY=5
-
-# Wechaty options
-PUPPET_UOS_ENABLED=true        # Enable UOS for modern accounts
-PUPPET_HEADLESS=false          # Set to true for production (no browser UI)
 ```
 
 ### Running the Bot
 
-**Development mode** (with auto-reload):
+**Build the application**:
 
 ```bash
-npm run dev
+go build -o wechat-meeting-scribe .
 ```
 
-**Production mode**:
+**Run the bot**:
 
 ```bash
-npm run build
-npm start
+./wechat-meeting-scribe
+```
+
+**Or build and run in one step**:
+
+```bash
+go run main.go
 ```
 
 ### First Time Setup
 
-1. Run the bot: `npm run dev`
-2. Scan the QR code with WeChat
-3. Wait for login confirmation
+1. Run the bot: `./wechat-meeting-scribe`
+2. Scan the QR code with WeChat (the URL will be printed in the console)
+3. Confirm login on your phone
 4. The bot will start monitoring configured rooms
+5. On subsequent runs, the bot will use hot login (no need to scan QR code again)
 
 ## 📖 Usage
 
@@ -140,18 +143,22 @@ The bot will immediately generate a summary of recent messages.
 
 ```
 wechat-meeting-scribe/
-├── src/
-│   ├── bot.ts                 # Main bot logic
-│   ├── config.ts              # Configuration loader
-│   ├── llm-service.ts         # LLM API integration
-│   ├── message-buffer.ts      # Message buffering system
-│   ├── summary-generator.ts   # Summary generation
-│   └── types.ts               # TypeScript type definitions
-├── dist/                      # Compiled JavaScript (after build)
+├── main.go                    # Application entry point
+├── bot/
+│   └── bot.go                 # Main bot logic and openwechat integration
+├── buffer/
+│   └── buffer.go              # Message buffering system (per-room)
+├── config/
+│   └── config.go              # Configuration loader
+├── llm/
+│   └── service.go             # LLM API integration
+├── summary/
+│   └── generator.go           # Summary generation
 ├── .env                       # Your configuration (not in git)
 ├── .env.example               # Configuration template
-├── package.json               # Dependencies
-├── tsconfig.json              # TypeScript config
+├── go.mod                     # Go module definition
+├── go.sum                     # Dependency checksums
+├── storage.json               # Hot login storage (auto-generated)
 └── README.md                  # This file
 ```
 
@@ -171,8 +178,6 @@ wechat-meeting-scribe/
 | `SUMMARY_KEYWORD` | string | @bot 总结 | Keyword trigger (empty=disabled) |
 | `MIN_MESSAGES_FOR_SUMMARY` | number | 5 | Minimum messages to generate summary |
 | `MAX_BUFFER_SIZE` | number | 200 | Maximum messages to keep in buffer |
-| `PUPPET_UOS_ENABLED` | boolean | true | Enable UOS patch for modern accounts |
-| `PUPPET_HEADLESS` | boolean | false | Run browser in headless mode |
 
 ### Trigger Strategy
 
@@ -187,23 +192,18 @@ You can enable multiple triggers simultaneously:
 
 ### Modify Summary Prompt
 
-Edit `src/llm-service.ts`, function `generateSummary()`, modify the `systemPrompt`:
+Edit `llm/service.go`, function `GenerateSummary()`, modify the `systemPrompt`:
 
-```typescript
-const systemPrompt = `Your custom prompt here...`
+```go
+systemPrompt := `Your custom prompt here...`
 ```
 
 ### Adjust Message Format
 
-Edit `src/message-buffer.ts`, function `formatMessagesForLLM()`:
+Edit `buffer/buffer.go`, function `FormatMessagesForLLM()`:
 
-```typescript
-formatMessagesForLLM(): string[] {
-  return this.messages.map(msg => {
-    // Customize message format
-    return `${msg.sender}: ${msg.content}`
-  })
-}
+```go
+formatted[i] = fmt.Sprintf("[%s] %s: %s", timeStr, msg.Sender, msg.Content)
 ```
 
 ## 🐛 Troubleshooting
@@ -213,9 +213,10 @@ formatMessagesForLLM(): string[] {
 **Problem**: Cannot scan QR code or login fails
 
 **Solutions**:
-- Make sure your WeChat account can login at https://wx.qq.com
-- Ensure `PUPPET_UOS_ENABLED=true` in `.env`
-- Try with `PUPPET_HEADLESS=false` to see the browser
+- Check that your WeChat account is not restricted
+- The bot uses Desktop mode by default to bypass web WeChat restrictions
+- Look for the QR code URL in the console output
+- After first successful login, subsequent logins will use hot login (stored in `storage.json`)
 
 ### LLM API Errors
 
@@ -239,17 +240,18 @@ formatMessagesForLLM(): string[] {
 
 ### Dependencies Issues
 
-**Problem**: Installation or runtime errors
+**Problem**: Installation or build errors
 
 **Solutions**:
 ```bash
-# Clean install
-rm -rf node_modules package-lock.json
-npm install
+# Clean and rebuild
+go clean
+go mod tidy
+go build -o wechat-meeting-scribe .
 
-# If in China, use mirror for puppeteer
-export PUPPETEER_DOWNLOAD_HOST=https://registry.npmmirror.com/mirrors
-npm install
+# If you have Go module proxy issues, try:
+export GOPROXY=https://goproxy.io,direct
+go mod download
 ```
 
 ## 🔒 Security Notes
@@ -264,30 +266,26 @@ npm install
 ### Build
 
 ```bash
-npm run build
+go build -o wechat-meeting-scribe .
 ```
 
-### Clean
+### Run with Race Detection
 
 ```bash
-npm run clean
+go run -race main.go
+```
+
+### Format Code
+
+```bash
+go fmt ./...
 ```
 
 ### Run Tests
 
 ```bash
 # TODO: Add tests
-npm test
-```
-
-### Memory Usage
-
-```bash
-# Monitor while bot is running
-node --expose-gc dist/bot.js
-
-# Or use external tool
-ps aux | grep node
+go test ./...
 ```
 
 ## 🤝 Contributing
@@ -300,9 +298,8 @@ MIT
 
 ## 🙏 Acknowledgments
 
-- [Wechaty](https://github.com/wechaty/wechaty) - Conversational RPA SDK
-- [wechaty-puppet-wechat](https://github.com/wechaty/wechaty-puppet-wechat) - WeChat Web Protocol
-- [OpenAI](https://github.com/openai/openai-node) - OpenAI Node.js library
+- [openwechat](https://github.com/eatmoreapple/openwechat) - Golang WeChat SDK that bypasses login restrictions
+- [go-openai](https://github.com/sashabaranov/go-openai) - OpenAI Go library
 - Google Gemini - Default LLM provider
 
 ## 📞 Support
@@ -312,7 +309,7 @@ If you encounter issues:
 1. Check the [Troubleshooting](#-troubleshooting) section
 2. Review console logs for error messages
 3. Verify your configuration in `.env`
-4. Check Wechaty documentation: https://wechaty.js.org/
+4. Check openwechat documentation: https://openwechat.readthedocs.io/
 
 ---
 

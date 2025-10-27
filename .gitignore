@@ -1,15 +1,8 @@
-# Dependencies
-node_modules/
-package-lock.json
-
-# Build output
-dist/
-
 # Environment variables
 .env
 
-# Wechaty data
-*.memory-card.json
+# Hot login storage
+storage.json
 
 # Logs
 *.log
@@ -24,3 +17,12 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Go build artifacts
+wechat-meeting-scribe
+wechat-meeting-scribe.exe
+
+# TypeScript build artifacts (legacy)
+node_modules/
+dist/
+*.tsbuildinfo

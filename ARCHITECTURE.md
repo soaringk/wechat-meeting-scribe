@@ -5,6 +5,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │              WeChat Meeting Scribe - AI Meeting Secretary           │
+│                        (Go + openwechat)                            │
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -12,19 +13,19 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐               ┌──────────────────────────────┐    │
 │  │   WeChat     │               │       LLM Provider           │    │
-│  │  Web Server  │               │                              │    │
+│  │   Server     │               │  (Gemini/OpenAI/etc)         │    │
 │  └──────┬───────┘               └────────────┬─────────────────┘    │
 │         │                                    │                      │
 └─────────┼────────────────────────────────────┼──────────────────────┘
           │                                    │
-          │ WebSocket                          │ HTTPS
-          │                                    │
+          │ HTTP/HTTPS                         │ HTTPS
+          │ (Desktop Protocol)                 │
 ┌─────────▼────────────────────────────────────▼───────────────────────┐
 │                         Bot Application Layer                        │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐     │
-│  │                      bot.ts (Main Logic)                    │     │
+│  │                      bot/bot.go (Main Logic)                │     │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │     │
 │  │  │ Event Handler│  │ Room Filter  │  │ Orchestrator │       │     │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘       │     │
@@ -34,25 +35,31 @@
 │         │                  │                  │                      │
 │         ▼                  ▼                  ▼                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                │
-│  │ Message      │  │  Summary     │  │  LLM         │                │
-│  │ Buffer       │  │  Generator   │  │  Service     │                │
+│  │ buffer/      │  │  summary/    │  │  llm/        │                │
+│  │ buffer.go    │  │  generator.go│  │  service.go  │                │
 │  │              │  │              │  │              │                │
 │  │ - Storage    │  │ - Format     │  │ - API Call   │                │
-│  │ - Triggers   │  │ - Enrich     │  │ - Retry      │                │
+│  │ - Triggers   │  │ - Enrich     │  │ - OpenAI SDK │                │
 │  │ - Stats      │  │ - Header     │  │ - Error      │                │
+│  │ - Mutex Lock │  │              │  │              │                │
 │  └──────────────┘  └──────────────┘  └──────────────┘                │
 │                                                                      │
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────┐
-│                      Configuration & Utilities                       │
+│                      Configuration & Storage                         │
 ├──────────────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                │
-│  │  config.ts   │  │  types.ts    │  │   .env       │                │
-│  │              │  │              │  │              │                │
-│  │ - Load env   │  │ - Interfaces │  │ - API Keys   │                │
-│  │ - Validate   │  │ - Types      │  │ - Settings   │                │
+│  │ config/      │  │  main.go     │  │   .env       │                │
+│  │ config.go    │  │              │  │              │                │
+│  │              │  │ - Entry pt   │  │ - API Keys   │                │
+│  │ - Load env   │  │ - Signals    │  │ - Settings   │                │
+│  │ - Validate   │  │ - Lifecycle  │  │              │                │
 │  └──────────────┘  └──────────────┘  └──────────────┘                │
+│                                                                       │
+│  ┌──────────────┐                                                    │
+│  │ storage.json │  (Hot login session storage)                       │
+│  └──────────────┘                                                    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -67,33 +74,33 @@ WeChat Group Message
         │
         ▼
 ┌───────────────────┐
-│ Wechaty Puppet    │  (Receives via web protocol)
-│ (puppet-wechat)   │
+│ openwechat SDK    │  (Receives via Desktop protocol)
+│                   │  Bypasses web login restrictions
 └────────┬──────────┘
          │
          ▼
 ┌───────────────────┐
-│ bot.ts            │  onMessage(message: Message)
+│ bot.handleMessage │  handleMessage(*openwechat.Message)
 │ Event Handler     │
 └────────┬──────────┘
          │
-         ├─► Filter: Is from room?
-         │
-         ├─► Filter: Is target room?
+         ├─► Filter: Not from self?
          │
          ├─► Filter: Is text message?
          │
-         ├─► Filter: Not from self?
+         ├─► Filter: Is from group?
+         │
+         ├─► Filter: Is target room?
          │
          ▼
 ┌───────────────────┐
-│ BufferedMessage   │  { id, timestamp, sender, content, roomTopic }
-│ Object Created    │
+│ BufferedMessage   │  buffer.BufferedMessage{...}
+│ Struct Created    │
 └────────┬──────────┘
          │
          ▼
 ┌───────────────────┐
-│ MessageBuffer     │  buffer.add(message)
+│ MessageBuffer     │  buffer.Add(msg) - thread-safe with mutex
 │ Storage           │
 └────────┬──────────┘
          │
@@ -102,14 +109,14 @@ WeChat Group Message
          ├─► Check: Time trigger?
          │
          ▼
-    shouldSummarize()?
+    ShouldSummarize()?
          │
     ┌────┴────┐
     │         │
    No        Yes
     │         │
   Return      ▼
-         Generate Summary
+         Generate Summary (in goroutine)
 ```
 
 ---
@@ -121,21 +128,21 @@ Trigger Activated
       │
       ▼
 ┌──────────────────────┐
-│ SummaryGenerator     │  generate(buffer)
+│ generator.Generate() │  Generate(buffer, roomTopic)
 │ Coordinator          │
 └──────────┬───────────┘
            │
            ▼
 ┌──────────────────────┐
-│ MessageBuffer        │  formatMessagesForLLM()
+│ buffer.Format...()   │  FormatMessagesForLLM(roomTopic)
 │ Format Messages      │
 └──────────┬───────────┘
            │
-           │  ["[10:30] Alice: Hello", "[10:31] Bob: Hi", ...]
+           │  []string{"[10:30] Alice: Hello", "[10:31] Bob: Hi", ...}
            │
            ▼
 ┌──────────────────────┐
-│ LLMService           │  generateSummary(messages)
+│ llm.GenerateSummary()│  GenerateSummary(messages)
 │ Build Prompt         │
 └──────────┬───────────┘
            │
@@ -143,14 +150,14 @@ Trigger Activated
            │
            ▼
 ┌──────────────────────┐
-│       LLM API        │  POST /chat/completions
+│  LLM API (OpenAI SDK)│  CreateChatCompletion()
 └──────────┬───────────┘
            │
            │  Structured Summary Response
            │
            ▼
 ┌──────────────────────┐
-│ SummaryGenerator     │  generateHeader() + format
+│ generator.Generate() │  generateHeader() + format
 │ Enrich Response      │
 └──────────┬───────────┘
            │
@@ -158,13 +165,13 @@ Trigger Activated
            │
            ▼
 ┌──────────────────────┐
-│ bot.ts               │  room.say(summary)
+│ bot.sendToSelf()     │  FileHelper().SendText(summary)
 │ Send to Self         │
 └──────────┬───────────┘
            │
            ▼
 ┌──────────────────────┐
-│ MessageBuffer        │  buffer.clear()
+│ buffer.Clear()       │  Clear(roomTopic) - thread-safe
 │ Clear Buffer         │
 └──────────────────────┘
            │
@@ -176,69 +183,73 @@ Trigger Activated
 
 ## Component Responsibilities
 
-### bot.ts (Main Orchestrator)
+### bot/bot.go (Main Orchestrator)
 
 **Responsibilities**:
-- Initialize Wechaty instance
-- Handle lifecycle events (scan, login, logout, error)
-- Process incoming messages
+- Initialize openwechat bot instance
+- Handle lifecycle events (login, logout)
+- Process incoming messages via MessageHandler
 - Filter rooms and messages
 - Coordinate summary generation
-- Manage interval timer
+- Manage interval timer with goroutines
+- Support hot login with persistent storage
 
 **Key Methods**:
-- `setupEventHandlers()`: Register event listeners
-- `onMessage()`: Process each message
+- `Start()`: Initialize and start bot with hot login support
+- `handleMessage()`: Process each message (registered as MessageHandler)
 - `isTargetRoom()`: Room filtering logic
 - `checkKeywordTrigger()`: Keyword detection
-- `generateAndSendSummary()`: Orchestrate summary flow
-- `startIntervalTimer()`: Setup time-based trigger
+- `generateAndSendSummary()`: Orchestrate summary flow (runs in goroutine)
+- `startIntervalTimer()`: Setup time-based trigger with ticker and select
+- `sendToSelf()`: Send message to FileHelper (self)
 
 ---
 
-### message-buffer.ts (Storage & Triggers)
+### buffer/buffer.go (Storage & Triggers)
 
 **Responsibilities**:
-- Store messages in memory
+- Store messages in memory (per-room maps)
 - Implement trigger logic (time/volume/keyword)
 - Maintain buffer size limits
 - Provide statistics
 - Format messages for LLM
+- Thread-safe operations with RWMutex
 
 **Key Methods**:
-- `add()`: Add message to buffer
-- `shouldSummarize()`: Check all trigger conditions
-- `formatMessagesForLLM()`: Prepare for API call
-- `getStats()`: Return statistics
-- `clear()`: Reset buffer after summary
+- `Add()`: Add message to buffer (thread-safe with Lock)
+- `ShouldSummarize()`: Check all trigger conditions (thread-safe with RLock)
+- `FormatMessagesForLLM()`: Prepare for API call
+- `GetStats()`: Return statistics
+- `Clear()`: Reset buffer after summary
+- `GetRoomTopics()`: Get all tracked room topics
 
 **State**:
-- `messages: BufferedMessage[]` - In-memory storage
-- `lastSummaryTime: Date` - Track time trigger
+- `messagesByRoom map[string][]BufferedMessage` - Per-room storage
+- `lastSummaryTime map[string]time.Time` - Track time trigger per room
+- `mu sync.RWMutex` - Thread-safe access
 
 ---
 
-### llm-service.ts (API Integration)
+### llm/service.go (API Integration)
 
 **Responsibilities**:
-- Communicate with LLM API
+- Communicate with LLM API using go-openai SDK
 - Build prompts for meeting minutes
-- Handle API errors and retries
+- Handle API errors
 - Parse API responses
 
 **Key Methods**:
-- `chat()`: Generic LLM chat completion
-- `generateSummary()`: Specialized for meeting minutes
+- `GenerateSummary()`: Build prompt and call LLM API
 
 **Error Handling**:
 - Network timeouts
 - API authentication errors
 - Invalid response formats
-- Rate limiting
+- Returns error for upstream handling
 
 ---
 
-### summary-generator.ts (Formatting)
+### summary/generator.go (Formatting)
 
 **Responsibilities**:
 - Coordinate summary generation
@@ -247,24 +258,27 @@ Trigger Activated
 - Handle edge cases (no messages)
 
 **Key Methods**:
-- `generate()`: Main entry point
-- `generateHeader()`: Create header with date/time
+- `Generate()`: Main entry point
+- `generateHeader()`: Create header with date/time in Chinese format
 
 ---
 
-### config.ts (Configuration)
+### config/config.go (Configuration)
 
 **Responsibilities**:
-- Load environment variables
+- Load environment variables using godotenv
 - Validate required settings
-- Provide type-safe config object
+- Provide global config struct
 - Display startup configuration
 
 **Key Functions**:
+- `Load()`: Load .env file and parse environment variables
+- `Validate()`: Validate and display config
 - `getEnv()`: String environment variables
-- `getEnvNumber()`: Numeric environment variables
-- `getEnvBoolean()`: Boolean environment variables
-- `validateConfig()`: Validate and display config
+- `getEnvInt()`: Integer environment variables
+
+**Global State**:
+- `AppConfig *Config` - Global configuration singleton
 
 ---
 
@@ -504,33 +518,53 @@ User Receives
 
 ---
 
+## Concurrency & Thread Safety
+
+### Go-Specific Features
+
+**Goroutines**:
+- Summary generation runs in goroutines (non-blocking)
+- Interval timer runs in dedicated goroutine with select/ticker pattern
+- Signal handling in separate goroutine
+
+**Thread Safety**:
+- `MessageBuffer` uses `sync.RWMutex` for concurrent access
+- Read operations use `RLock()` (multiple readers)
+- Write operations use `Lock()` (exclusive access)
+
+**Channels**:
+- `stopTimer chan bool` for graceful timer shutdown
+- Signal channel for SIGINT/SIGTERM handling
+
 ## Scalability Considerations
 
 ### Current Limitations
 
 1. **Single Instance**: One bot = one WeChat account
-2. **In-Memory Buffer**: Lost on restart
-3. **Single Room Buffer**: Shared across all rooms
-4. **No Persistence**: No database
+2. **In-Memory Buffer**: Lost on restart (hot login session persists)
+3. **Per-Room Buffers**: Independent buffers for each room
+4. **No Persistence**: Messages not persisted to database
 
 ### Potential Improvements
 
 ```
-Current Architecture:
+Current Architecture (Go):
 ┌──────────────┐
-│   Bot        │ ──► In-memory buffer
-│   Instance   │ ──► No persistence
+│   Bot        │ ──► In-memory buffer (thread-safe)
+│   Instance   │ ──► Hot login (storage.json)
+│  (compiled)  │ ──► Per-room buffers
 └──────────────┘
 
 Future Architecture:
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │   Bot        │ ──► │   Redis      │ ──► │  PostgreSQL  │
 │   Instance   │     │   (Buffer)   │     │  (History)   │
+│  (Go binary) │     │              │     │              │
 └──────────────┘     └──────────────┘     └──────────────┘
         │
-        ├─► Per-room buffers
-        ├─► Distributed locking
-        └─► Horizontal scaling
+        ├─► Distributed per-room buffers
+        ├─► Redis locks for concurrency
+        └─► Horizontal scaling with load balancer
 ```
 
 ---
@@ -539,22 +573,24 @@ Future Architecture:
 
 ### Time Complexity
 
-- `add()`: O(1)
-- `shouldSummarize()`: O(1)
-- `formatMessagesForLLM()`: O(n) where n = buffer size
-- `generateSummary()`: O(n) + API latency
+- `Add()`: O(1) with mutex lock
+- `ShouldSummarize()`: O(1) with read lock
+- `FormatMessagesForLLM()`: O(n) where n = buffer size
+- `GenerateSummary()`: O(n) + API latency
 
 ### Space Complexity
 
-- Buffer: O(n) where n = MAX_BUFFER_SIZE (default: 200)
+- Buffer per room: O(n) where n = MAX_BUFFER_SIZE (default: 200)
 - Each message: ~100-500 bytes
-- Total memory: < 1MB for buffer
+- Total memory: < 1MB per room
+- Go binary: ~10-15MB compiled size
 
 ### Latency
 
-- Message processing: < 10ms
+- Message processing: < 5ms (Go is faster than Node.js)
 - LLM API call: 2-10 seconds (network + generation)
 - Total summary generation: 2-10 seconds
+- Goroutine overhead: negligible
 
 ---
 
@@ -566,14 +602,17 @@ Future Architecture:
 ┌──────────────────────────┐
 │  Developer Machine       │
 │  ┌────────────────────┐  │
-│  │  npm run dev       │  │
-│  │  (tsx watch mode)  │  │
+│  │  go run main.go    │  │
+│  │  or                │  │
+│  │  ./wechat-meeting- │  │
+│  │      scribe        │  │
 │  └────────────────────┘  │
 │           │              │
 │           ▼              │
 │  ┌────────────────────┐  │
 │  │  WeChat Login      │  │
-│  │  (browser visible) │  │
+│  │  (QR code URL)     │  │
+│  │  storage.json      │  │
 │  └────────────────────┘  │
 └──────────────────────────┘
 ```
@@ -584,14 +623,14 @@ Future Architecture:
 ┌──────────────────────────┐
 │  Server (VPS/Cloud)      │
 │  ┌────────────────────┐  │
-│  │  npm start         │  │
-│  │  (headless mode)   │  │
+│  │  Go binary         │  │
+│  │  (single file)     │  │
 │  └────────────────────┘  │
 │           │              │
 │           ▼              │
 │  ┌────────────────────┐  │
-│  │  PM2 / systemd     │  │
-│  │  (process manager) │  │
+│  │  systemd service   │  │
+│  │  (auto-restart)    │  │
 │  └────────────────────┘  │
 └──────────────────────────┘
 ```
@@ -600,23 +639,24 @@ Future Architecture:
 
 ```
 ┌────────────────────────────────────┐
-│  Docker Container                  │
+│  Docker Container (scratch/alpine) │
 │  ┌──────────────────────────────┐  │
-│  │  Node.js App                 │  │
-│  │  + Chromium (puppeteer)      │  │
+│  │  Go binary (~15MB)           │  │
+│  │  No runtime dependencies     │  │
 │  └──────────────────────────────┘  │
 │           │                        │
 │           ▼                        │
 │  ┌──────────────────────────────┐  │
 │  │  Mounted Volumes             │  │
 │  │  - .env (secrets)            │  │
-│  │  - logs/                     │  │
+│  │  - storage.json (session)    │  │
 │  └──────────────────────────────┘  │
 └────────────────────────────────────┘
             │
             ▼
 ┌────────────────────────────────────┐
 │  Orchestration (k8s/docker-compose)│
+│  Much smaller images vs Node.js    │
 └────────────────────────────────────┘
 ```
 
@@ -649,9 +689,31 @@ Future Monitoring:
 
 ---
 
-This architecture is designed for simplicity, reliability, and extensibility. It can handle typical use cases (1-10 groups, <100 messages/minute) efficiently while remaining easy to understand and modify.
+## Key Differences from TypeScript Version
+
+### Advantages
+
+1. **Performance**: Go is compiled, faster message processing
+2. **Concurrency**: Native goroutines for parallel operations
+3. **Deployment**: Single binary, no runtime dependencies
+4. **Memory**: More efficient memory usage with explicit types
+5. **Thread Safety**: Built-in sync primitives (RWMutex)
+6. **Login Reliability**: openwechat bypasses WeChat web restrictions
+
+### Migration Notes
+
+- TypeScript async/await → Go goroutines + channels
+- JavaScript Promises → Go error returns
+- Node.js event emitters → Go function callbacks
+- npm packages → Go modules
+- Wechaty (account blocked) → openwechat (works)
 
 ---
 
-**Last Updated**: 2025-10-17
-**Version**: 1.0.0
+This architecture is designed for simplicity, reliability, and extensibility. It can handle typical use cases (1-10 groups, <100 messages/minute) efficiently while remaining easy to understand and modify. The Go implementation provides better performance and deployment characteristics compared to the Node.js version.
+
+---
+
+**Last Updated**: 2025-10-27
+**Version**: 2.0.0 (Go rewrite)
+**Previous Version**: 1.0.0 (TypeScript/Node.js)
